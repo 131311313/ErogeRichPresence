@@ -1,0 +1,4 @@
+pypresence==4.2.1
+psutil==5.9.5
+pystray==0.19.4
+Pillow==10.0.0
