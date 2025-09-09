@@ -4,7 +4,7 @@
 
 ErogeRichPresence は、エロゲーのゲームアクティビティを **Discord Rich Presence** に反映させるために作られた軽量な Python スクリプトです。  
 日本語 / 英語 の切り替えに対応しています。
-![Uploading image.png…]()
+
 
 ---
 
