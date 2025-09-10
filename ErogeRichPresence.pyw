@@ -172,7 +172,7 @@ class ErogeRichPresence:
             return
         
         game_name = GAMES[game_exe][self.language]
-        state = f"{game_name}{'をプレイ中' if self.language == 'jp' else ' Playing'}"
+        state = f"{game_name}をプレイ中" if self.language == 'jp' else f"Playing {game_name}"
         
         try:
             self.rpc.update(state=state, large_image="icon")
