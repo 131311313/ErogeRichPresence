@@ -1,5 +1,4 @@
 import time
-import psutil
 import json
 from pypresence import Presence
 import pystray
@@ -7,6 +6,8 @@ from PIL import Image
 import threading
 import sys
 import os
+import ctypes
+from ctypes import wintypes
 
 GAMES = {
     "HENPRI.exe": {
@@ -18,6 +19,48 @@ GAMES = {
         "en": "Dohna Dohna: Let's Do Bad Things Together"
     },
 }
+
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+psapi = ctypes.WinDLL('psapi', use_last_error=True)
+
+def find_process_by_name(process_name):
+    PROCESS_QUERY_INFORMATION = 0x0400
+    PROCESS_VM_READ = 0x0010
+    
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+    if snapshot == -1:
+        return None
+    
+    class PROCESSENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_char * 260)
+        ]
+    
+    pe32 = PROCESSENTRY32()
+    pe32.dwSize = ctypes.sizeof(PROCESSENTRY32)
+    
+    if not kernel32.Process32First(snapshot, ctypes.byref(pe32)):
+        kernel32.CloseHandle(snapshot)
+        return None
+    
+    while True:
+        if pe32.szExeFile.decode('utf-8', errors='ignore') == process_name:
+            kernel32.CloseHandle(snapshot)
+            return pe32.th32ProcessID
+        if not kernel32.Process32Next(snapshot, ctypes.byref(pe32)):
+            break
+    
+    kernel32.CloseHandle(snapshot)
+    return None
 
 class ErogeRichPresence:
     def __init__(self):
@@ -35,7 +78,7 @@ class ErogeRichPresence:
                 "en": "1414923130211663893"
             }
         }
-        self.client_id = None
+        self.last_pid = None
     
     def load_config(self):
         if getattr(sys, 'frozen', False):
@@ -99,57 +142,46 @@ class ErogeRichPresence:
             return True
         except:
             return False
-        
-    def find_games(self):
-        for proc in psutil.process_iter(['name']):
-            try:
-                if proc.info['name'] in GAMES:
-                    return proc.info['name']
-            except:
-                continue
-        return None
     
-    def connect(self, game_exe=None):
+    def find_games(self):
+        for game_name in GAMES.keys():
+            pid = find_process_by_name(game_name)
+            if pid:
+                return game_name, pid
+        return None, None
+    
+    def connect(self, game_exe):
         try:
             if self.rpc:
                 try:
                     self.rpc.close()
                 except:
                     pass
-            if game_exe:
-                self.client_id = self.get_client_id(game_exe)
-            self.rpc = Presence(self.client_id)
+            client_id = self.get_client_id(game_exe)
+            self.rpc = Presence(client_id)
             self.rpc.connect()
+            print(f"Connected for {game_exe}")
             return True
         except Exception as e:
-            print(f"RPC connect error: {e}")
+            print(f"Connect error: {e}")
             self.rpc = None
             return False
     
     def update(self, game_exe):
         if not self.rpc:
             return
+        
+        game_name = GAMES[game_exe][self.language]
+        state = f"{game_name}{'をプレイ中' if self.language == 'jp' else ' Playing'}"
+        
         try:
-            game_name = GAMES[game_exe][self.language]
-            
-            if self.language == "jp":
-                state = f"{game_name}をプレイ中"
-            else:
-                state = f"Playing {game_name}"
-            
-            print(f"Updating RPC: game_name={game_name}, language={self.language}")
-            
-            self.rpc.update(
-                state=state,
-                large_image="icon"
-            )
+            self.rpc.update(state=state, large_image="icon")
+            print(f"Updated: {state}")
         except Exception as e:
-            print(f"RPC update error: {e}")
+            print(f"Update error: {e}")
     
     def get_client_id(self, game_exe):
-        if game_exe in self.client_ids:
-            return self.client_ids[game_exe][self.language]
-        return "1414899272129843233"
+        return self.client_ids.get(game_exe, {}).get(self.language, "1414899272129843233")
     
     def clear(self):
         if self.rpc:
@@ -162,6 +194,7 @@ class ErogeRichPresence:
         self.language = "en" if self.language == "jp" else "jp"
         self.config["language"] = self.language
         self.save_config(self.config)
+        self.last_pid = None
     
     def create_tray(self):
         def on_exit(icon, item):
@@ -175,26 +208,18 @@ class ErogeRichPresence:
         
         def toggle_lang(icon, item):
             self.toggle_language()
-            if self.rpc:
-                try:
-                    self.rpc.close()
-                except:
-                    pass
+            if self.current_game and self.rpc:
+                self.rpc.close()
                 self.rpc = None
-            self.current_game = None
             icon.update_menu()
         
         def toggle_startup(icon, item):
             if self.is_in_startup():
                 if self.remove_from_startup():
                     print("Removed from startup")
-                else:
-                    print("Failed to remove from startup")
             else:
                 if self.add_to_startup():
                     print("Added to startup")
-                else:
-                    print("Failed to add to startup")
             icon.update_menu()
         
         try:
@@ -222,27 +247,26 @@ class ErogeRichPresence:
         tray = self.create_tray()
         threading.Thread(target=tray.run, daemon=True).start()
         
+        print("Starting...")
+        
         while True:
-            game = self.find_games()
+            game, pid = self.find_games()
             
-            if game != self.current_game:
-                if game:
+            if game:
+                if pid != self.last_pid:
+                    self.last_pid = pid
+                    if not self.rpc or self.current_game != game:
+                        self.connect(game)
+                        self.current_game = game
+                    self.update(game)
+            else:
+                if self.last_pid:
+                    self.last_pid = None
+                    self.current_game = None
                     if self.rpc:
                         self.clear()
                         self.rpc.close()
                         self.rpc = None
-                    self.connect(game)
-                    if self.rpc:
-                        self.update(game)
-                else:
-                    self.clear()
-                self.current_game = game
-            elif game and self.rpc:
-                try:
-                    self.update(game)
-                except Exception as e:
-                    print(f"Update error: {e}")
-                    self.rpc = None
             
             time.sleep(1)
 
