@@ -1,3 +1,45 @@
 {
-  "language": "en"
+  "language": "en",
+  "games": {
+    "HENPRI.exe": {
+      "jp": "ヘンタイプリズン",
+      "en": "Hentai Prison",
+      "client_ids": {
+        "jp": "1414899272129843233",
+        "en": "1414920530485575745"
+      }
+    },
+    "dohnadohna.exe": {
+      "jp": "ドーナドーナ",
+      "en": "Dohna Dohna: Let's Do Bad Things Together",
+      "client_ids": {
+        "jp": "1414922716535980063",
+        "en": "1414923130211663893"
+      }
+    },
+    "amaginukanojo.exe": {
+      "jp": "雨衣彼女",
+      "en": "amaginukanojo",
+      "client_ids": {
+        "jp": "1455786766610202788",
+        "en": "1455785997328715952"
+      }
+    },
+    "NUKITASHI2.EXE": {
+      "jp": "ぬきたし 2",
+      "en": "nukitashi 2",
+      "client_ids": {
+        "jp": "1455787692834033704",
+        "en": "1455787176452165632"
+      }
+    },
+    "NUKITASHI.EXE": {
+      "jp": "ぬきたし",
+      "en": "nukitashi",
+      "client_ids": {
+        "jp": "1455788292518838354",
+        "en": "1455788060921823364"
+      }
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import time
 import json
+import copy
 from pypresence import Presence
 import pystray
 from PIL import Image
@@ -9,14 +10,46 @@ import os
 import ctypes
 from ctypes import wintypes
 
-GAMES = {
+DEFAULT_GAMES = {
     "HENPRI.exe": {
         "jp": "ヘンタイプリズン",
-        "en": "Hentai Prison"
+        "en": "Hentai Prison",
+        "client_ids": {
+            "jp": "1414899272129843233",
+            "en": "1414920530485575745"
+        }
     },
     "dohnadohna.exe": {
         "jp": "ドーナドーナ",
-        "en": "Dohna Dohna: Let's Do Bad Things Together"
+        "en": "Dohna Dohna: Let's Do Bad Things Together",
+        "client_ids": {
+            "jp": "1414922716535980063",
+            "en": "1414923130211663893"
+        }
+    },
+    "amaginukanojo.exe": {
+        "jp": "雨衣彼女",
+        "en": "amaginukanojo",
+        "client_ids": {
+            "jp": "1455786766610202788",
+            "en": "1455785997328715952"
+        }
+    },
+    "NUKITASHI2.EXE": {
+        "jp": "ぬきたし 2",
+        "en": "nukitashi 2",
+        "client_ids": {
+            "jp": "1455787692834033704",
+            "en": "1455787176452165632"
+        }
+    },
+    "NUKITASHI.EXE": {
+        "jp": "ぬきたし",
+        "en": "nukitashi",
+        "client_ids": {
+            "jp": "1455788292518838354",
+            "en": "1455788060921823364"
+        }
     },
 }
 
@@ -68,17 +101,63 @@ class ErogeRichPresence:
         self.current_game = None
         self.config = self.load_config()
         self.language = self.config.get("language", "jp")
-        self.client_ids = {
-            "HENPRI.exe": {
-                "jp": "1414899272129843233",
-                "en": "1414920530485575745"
-            },
-            "dohnadohna.exe": {
-                "jp": "1414922716535980063",
-                "en": "1414923130211663893"
-            }
-        }
+        self.games = self.load_games_from_config(self.config)
         self.last_pid = None
+    
+    def load_games_from_config(self, config):
+        default_games = copy.deepcopy(DEFAULT_GAMES)
+        games = config.get("games")
+        if not isinstance(games, dict):
+            config["games"] = default_games
+            self.save_config(config)
+            return default_games
+
+        changed = False
+        merged = {}
+        for exe, default_entry in default_games.items():
+            current_entry = games.get(exe)
+            if not isinstance(current_entry, dict):
+                merged[exe] = copy.deepcopy(default_entry)
+                changed = True
+                continue
+
+            entry = copy.deepcopy(default_entry)
+            if isinstance(current_entry.get("jp"), str):
+                entry["jp"] = current_entry["jp"]
+            if isinstance(current_entry.get("en"), str):
+                entry["en"] = current_entry["en"]
+            if isinstance(current_entry.get("client_ids"), dict):
+                if isinstance(current_entry["client_ids"].get("jp"), str):
+                    entry["client_ids"]["jp"] = current_entry["client_ids"]["jp"]
+                if isinstance(current_entry["client_ids"].get("en"), str):
+                    entry["client_ids"]["en"] = current_entry["client_ids"]["en"]
+
+            merged[exe] = entry
+
+        for exe, current_entry in games.items():
+            if exe in merged:
+                continue
+            if not isinstance(current_entry, dict):
+                continue
+            if not isinstance(current_entry.get("client_ids"), dict):
+                continue
+            merged[exe] = {
+                "jp": current_entry.get("jp", exe),
+                "en": current_entry.get("en", exe),
+                "client_ids": {
+                    "jp": current_entry["client_ids"].get("jp"),
+                    "en": current_entry["client_ids"].get("en"),
+                }
+            }
+
+        if config.get("games") != merged:
+            config["games"] = merged
+            changed = True
+
+        if changed:
+            self.save_config(config)
+
+        return merged
     
     def load_config(self):
         if getattr(sys, 'frozen', False):
@@ -89,7 +168,7 @@ class ErogeRichPresence:
             with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
-            default_config = {"language": "jp"}
+            default_config = {"language": "jp", "games": copy.deepcopy(DEFAULT_GAMES)}
             self.save_config(default_config)
             return default_config
     
@@ -144,7 +223,7 @@ class ErogeRichPresence:
             return False
     
     def find_games(self):
-        for game_name in GAMES.keys():
+        for game_name in self.games.keys():
             pid = find_process_by_name(game_name)
             if pid:
                 return game_name, pid
@@ -171,7 +250,7 @@ class ErogeRichPresence:
         if not self.rpc:
             return
         
-        game_name = GAMES[game_exe][self.language]
+        game_name = self.games[game_exe][self.language]
         state = f"{game_name}をプレイ中" if self.language == 'jp' else f"Playing {game_name}"
         
         try:
@@ -181,7 +260,8 @@ class ErogeRichPresence:
             print(f"Update error: {e}")
     
     def get_client_id(self, game_exe):
-        return self.client_ids.get(game_exe, {}).get(self.language, "1414899272129843233")
+        client_ids = self.games.get(game_exe, {}).get("client_ids", {})
+        return client_ids.get(self.language, "1414899272129843233")
     
     def clear(self):
         if self.rpc:
